@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 
 from collections import Iterable
@@ -7,11 +8,12 @@ from sqlalchemy import create_engine
 class MIMIC3:
   def __init__(
     self,
-    db_uri,
-    mimic_schema="mimiciii",
-    sepsis_schema="mimiciii_sepsis",
-    derived_schema="mimiciii_derived",
-    trewscore_feature_schema="trewscore_feat"
+    db_uri: str,
+    mimic_schema: str = "mimiciii",
+    sepsis_schema: str  ="mimiciii_sepsis",
+    derived_schema: str = "mimiciii_derived",
+    trewscore_feature_schema: str = "trewscore_feat",
+    data_save_path: str = "./files"
   ):
     self.engine = create_engine(db_uri)
     self.conn = self.engine.connect()
@@ -21,9 +23,28 @@ class MIMIC3:
     self.derived_schema = derived_schema
     self.trewscore_feature_schema = trewscore_feature_schema
 
+    self.data_save_path = data_save_path
+    os.makedirs(self.data_save_path, exist_ok=True)
+
+  def save_df(self, df: pd.DataFrame, filename: str) -> None:
+
+    file_path = os.path.join(self.data_save_path, filename)
+    df.to_pickle(file_path)
+
+  def load_df(self, filename: str) -> pd.DataFrame:
+    file_path = os.path.join(self.data_save_path, filename)
+    return pd.read_pickle(file_path)
+
+  def check_df(self, filename: str) -> bool:
+    file_path = os.path.join(self.data_save_path, filename)
+    return os.path.exists(file_path)
+
+  def _get_merged_filename(self, feature_list: list) -> str:
+    return "_".join(feature_list) + ".pkl"
+
   def get_merged_data(
     self,
-    feature_list=[
+    feature_list: list = [
       "bun",
       "bun_cr_ratio",
       "gcs",
@@ -33,7 +54,12 @@ class MIMIC3:
       "sysbp",
       "urineoutput_6hr"
     ]
-  ):
+  ) -> pd.DataFrame:
+    print("Loading Merged Data")
+    filename = self._get_merged_filename(feature_list)
+    if self.check_df(filename):
+      return self.load_df(filename)
+
     key_cols = ["icustay_id", "hr", "endtime"]
     target_df = self.get_target()
     key_df = target_df[key_cols]
@@ -56,13 +82,14 @@ class MIMIC3:
     merged_df = pd.concat([
       target_df,
     ] + feature_df_list, axis=1)
-    print(merged_df)
+
+    self.save_df(merged_df, filename)
     return merged_df
 
   def get_feature(
     self,
-    table_name,
-    col_name=None,
+    table_name: str,
+    col_name: str = None,
   ):
     if col_name is None:
       col_name = table_name
