@@ -9,4 +9,16 @@ if __name__ == "__main__":
     config = json.load(f)
 
   data_loader = MIMIC3(config["DB_URI"])
-  data_loader.get_merged_data()
+  x, y, data_key_df, seq_len_list = data_loader.get_rnn_inputs()
+  print(x.shape)
+  print(y.shape)
+
+  data_loader._split_by_gender(
+    x,
+    y,
+    data_key_df,
+    seq_len_list,
+    train_gender="F"
+  )
+
+  data_loader.close()
