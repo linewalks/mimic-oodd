@@ -157,7 +157,7 @@ class MIMIC3:
       FROM
         {self.derived_schema}.icustay_hours AS icustay_hours
       LEFT JOIN
-        {self.sepsis_schema}.septic_shock_occurrence AS septic_shock
+        {self.sepsis_schema}.septic_shock_occurrence_v2 AS septic_shock
       ON
         icustay_hours.icustay_id = septic_shock.icustay_id
       LEFT JOIN
