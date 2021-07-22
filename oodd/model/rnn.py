@@ -17,8 +17,6 @@ class RNNModel:
 
   def build_model(self):
     model = Sequential()
-    print(self.num_features)
-    print(type(self.num_features))
     model.add(Input(shape=(None, self.num_features)))
 
     for node in self.rnn_nodes:
