@@ -277,7 +277,7 @@ class MIMIC3:
     selected_gender_patients = icustay_demo_df[icustay_demo_df.gender == train_gender].hadm_id.unique()
     other_gender_patients = icustay_demo_df[icustay_demo_df.gender != train_gender].hadm_id.unique()
 
-    num_train = int(len(selected_gender_patients) * train_ratio)
+    num_train = int(selected_gender_patients.size * train_ratio)
     train_patients = np.random.choice(selected_gender_patients, num_train, replace=False)
 
     test_selected_patients = set(selected_gender_patients) - set(train_patients)
