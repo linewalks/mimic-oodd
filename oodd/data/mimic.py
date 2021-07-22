@@ -78,7 +78,7 @@ class MIMIC3:
     key_df = target_df[key_cols]
 
     feature_df_list = []
-    for feature in feature_list:
+    for feature in self.feature_list:
       if isinstance(feature, str):
         table_name, col_name = feature, None
       else:
@@ -118,6 +118,8 @@ class MIMIC3:
         {self.derived_schema}.icustay_hours AS icustay_hours
       LEFT JOIN
         (
+          -- 시간 단위로 묶어서 처리
+          -- (1시간내 2회 이상 측정된 노이즈 제거)
           SELECT
             icustay_id,
             DATE_TRUNC('hour', charttime) AS charttime,
