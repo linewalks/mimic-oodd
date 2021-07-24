@@ -2,6 +2,7 @@ import json
 
 from oodd.data.mimic import MIMIC3
 from oodd.model.rnn import RNNModel
+from oodd.evaluation.prediction import RNNEvaluator
 
 
 if __name__ == "__main__":
@@ -32,8 +33,15 @@ if __name__ == "__main__":
     epochs=1
   )
 
-  y_pred = model.predict(
+  pred_y = model.predict(
     test_data["x"]
   )
+
+  prediction_result = RNNEvaluator().evaluate(
+    test_data["y"],
+    pred_y,
+    test_data["seq_len_list"]
+  )
+  print(prediction_result)
 
   data_loader.close()
