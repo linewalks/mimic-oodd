@@ -20,7 +20,7 @@ class PredictionEvaluator:
     }
 
 
-class RNNEvaluator(PredictionEvaluator):
+class RNNPredictionEvaluator(PredictionEvaluator):
   def evaluate(
     self,
     test_y,
