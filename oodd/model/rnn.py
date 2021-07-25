@@ -1,4 +1,4 @@
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import Input, LSTM, Dense
 
 
@@ -29,6 +29,7 @@ class RNNModel:
     model.summary()
 
     self.model = model
+    self.ood_model = Model(inputs=model.inputs, outputs=model.layers[-2].output)
 
   def train(
     self,
@@ -51,3 +52,9 @@ class RNNModel:
     x
   ):
     return self.model.predict(x)
+
+  def predict_ood(
+    self,
+    x
+  ):
+    return self.ood_model.predict(x)

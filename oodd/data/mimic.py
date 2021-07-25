@@ -298,11 +298,16 @@ class MIMIC3:
     test_data_key_df = data_key_df[test_idx]
     test_seq_key_list = seq_len_list[test_idx]
 
+    oodd_label = np.zeros(len(test_y))
+    oodd_label[test_data_key_df.hadm_id.isin(test_selected_patients)] = 1
+
     print("Train Patients", len(train_patients))
     print("Test Patients", len(test_patients))
 
     print("Train", train_x.shape, train_y.shape)
     print("Test", test_x.shape, test_y.shape)
+
+    print("OODD Label True", oodd_label.sum(), len(oodd_label))
 
     return {
       "x": train_x,
@@ -314,4 +319,5 @@ class MIMIC3:
       "y": test_y,
       "data_key_df": test_data_key_df,
       "seq_len_list": test_seq_key_list,
+      "oodd_label": oodd_label
     }
