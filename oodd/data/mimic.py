@@ -254,36 +254,25 @@ class MIMIC3:
     self.save_npy(seq_len_list, filename_dict["seq_len_list"])
     return x, y, data_key_df, seq_len_list
 
-  def _split_by_gender(
+  def _split_by_df(
     self,
     x,
     y,
     data_key_df,
     seq_len_list,
-    train_gender="M",
-    train_ratio=0.5,
-    random_state=1234
+    condition_df: pd.DataFrame,
+    train_ratio: float,
+    random_state: int = 1234
   ):
-    icustay_demo_df = pd.read_sql(f"""
-      SELECT
-        *
-      FROM
-        {self.mimic_schema}.admissions
-      LEFT JOIN
-        {self.mimic_schema}.patients
-      ON
-        admissions.subject_id = patients.subject_id
-    """, self.conn)
-
     np.random.seed(random_state)
-    selected_gender_patients = icustay_demo_df[icustay_demo_df.gender == train_gender].hadm_id.unique()
-    other_gender_patients = icustay_demo_df[icustay_demo_df.gender != train_gender].hadm_id.unique()
+    selected_patients = condition_df[condition_df.condition].hadm_id.unique()
+    other_patients = condition_df[~condition_df.condition].hadm_id.unique()
 
-    num_train = int(selected_gender_patients.size * train_ratio)
-    train_patients = np.random.choice(selected_gender_patients, num_train, replace=False)
+    num_train = int(selected_patients.size * train_ratio)
+    train_patients = np.random.choice(selected_patients, num_train, replace=False)
 
-    test_selected_patients = set(selected_gender_patients) - set(train_patients)
-    test_other_patients = set(other_gender_patients)
+    test_selected_patients = set(selected_patients) - set(train_patients)
+    test_other_patients = set(other_patients)
 
     test_patients = test_selected_patients | test_other_patients
 
@@ -308,7 +297,6 @@ class MIMIC3:
     print("Test", test_x.shape, test_y.shape)
 
     print("OODD Label True", oodd_label.sum(), len(oodd_label))
-
     return {
       "x": train_x,
       "y": train_y,
@@ -321,3 +309,70 @@ class MIMIC3:
       "seq_len_list": test_seq_key_list,
       "oodd_label": oodd_label
     }
+
+  def _split_by_gender(
+    self,
+    x,
+    y,
+    data_key_df,
+    seq_len_list,
+    train_gender: str = "M",
+    train_ratio: float = 0.5,
+    random_state: int = 1234
+  ):
+    visit_demo_df = pd.read_sql(f"""
+      SELECT
+        hadm_id,
+        gender = '{train_gender}' AS condition
+      FROM
+        {self.mimic_schema}.admissions
+      LEFT JOIN
+        {self.mimic_schema}.patients
+      ON
+        admissions.subject_id = patients.subject_id
+    """, self.conn)
+    return self._split_by_df(
+      x,
+      y,
+      data_key_df,
+      seq_len_list,
+      visit_demo_df,
+      train_ratio,
+      random_state
+    )
+
+  def _split_by_age(
+    self,
+    x,
+    y,
+    data_key_df,
+    seq_len_list,
+    train_age_min=40,
+    train_age_max=9999,
+    train_ratio: float = 0.5,
+    random_state=1234
+  ):
+    visit_demo_df = pd.read_sql(f"""
+      SELECT
+        hadm_id,
+        (
+          AGE(admittime, dob) BETWEEN
+          INTERVAL '{train_age_min} years' AND
+          INTERVAL '{train_age_max} years'
+        ) AS condition
+      FROM
+        {self.mimic_schema}.admissions
+      LEFT JOIN
+        {self.mimic_schema}.patients
+      ON
+        admissions.subject_id = patients.subject_id
+    """, self.conn)
+    return self._split_by_df(
+      x,
+      y,
+      data_key_df,
+      seq_len_list,
+      visit_demo_df,
+      train_ratio,
+      random_state
+    )
