@@ -1,3 +1,4 @@
+*.npy
 config.json
 files/
 
