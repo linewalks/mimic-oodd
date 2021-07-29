@@ -1,3 +1,4 @@
+from functools import total_ordering
 import os
 import numpy as np
 import pandas as pd
@@ -5,6 +6,7 @@ import pandas as pd
 from collections import Iterable
 from sqlalchemy import create_engine
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+from typing import Optional
 
 
 class MIMIC3:
@@ -102,7 +104,7 @@ class MIMIC3:
   def get_feature(
     self,
     table_name: str,
-    col_name: str = None,
+    col_name: Optional[str] = None,
   ):
     if col_name is None:
       col_name = table_name
@@ -198,7 +200,7 @@ class MIMIC3:
     seq_key_list = []
     x = []
     y = []
-    for icustay_id, group_df in merged_df.groupby(["hadm_id", "icustay_id"]):
+    for _, group_df in merged_df.groupby(["hadm_id", "icustay_id"]):
         group_key_df = group_df[key_cols]
         group_x_ary = group_df[x_cols].values
         group_y_ary = group_df[y_cols].values
@@ -246,6 +248,161 @@ class MIMIC3:
       merged_df,
       window_size,
       sequence_length
+    )
+
+    self.save_npy(x, filename_dict["x"])
+    self.save_npy(y, filename_dict["y"])
+    self.save_df(data_key_df, filename_dict["data_key_df"])
+    self.save_npy(seq_len_list, filename_dict["seq_len_list"])
+    return x, y, data_key_df, seq_len_list
+
+  def get_survival_input_filename(self, time_to_use, time_to_observe, data_type, postfix):
+    feature_list_str = "_".join(map(str, self.feature_list + [
+      time_to_use,
+      time_to_observe,
+      data_type
+    ]))
+    return f"{feature_list_str}_{postfix}"
+
+  def _convert_merged_to_survival_input(
+    self,
+    merged_df: pd.DataFrame,
+    time_to_use: int,
+    time_to_observe: int,
+    data_type: str
+  ):
+    # 방문별 입원시간 추출
+    max_hr_df = merged_df.groupby("hadm_id").hr.max().reset_index()
+
+    # 사용 기준 시간 후 데이터 날림
+    merged_df = merged_df[merged_df.hr <= time_to_use]
+
+    # Septic Shock 발생 시간 확인
+    min_time_df = merged_df.groupby("hadm_id").endtime.min().reset_index()
+    min_time_df = pd.merge(
+      min_time_df,
+      merged_df.groupby("hadm_id").charttime.min().reset_index(),
+      how="left",
+      on="hadm_id"
+    )
+
+    min_time_df.loc[
+      pd.notnull(min_time_df.charttime),
+      "timediff"
+    ] = pd.to_datetime(min_time_df.charttime) - pd.to_datetime(min_time_df.endtime)
+    min_time_df.loc[
+      pd.isnull(min_time_df.charttime),
+      "timediff"
+    ] = None
+    min_time_df.timediff = min_time_df.timediff / np.timedelta64(1, "h")
+
+    # 기준 시간 이전에 Septic Shock이 발생한 환자는 버림
+    count = (min_time_df.timediff <= time_to_use).sum()
+    print(f"Septic shock occured before {time_to_use} hours", count)
+    min_time_df = min_time_df[~(min_time_df.timediff < time_to_use)]
+
+    min_time_df = pd.merge(
+      min_time_df,
+      max_hr_df,
+      how="left",
+      on="hadm_id"
+    )
+
+    # 기준 시간 이전에 퇴원한 환자는 버림
+    count = (min_time_df.hr < time_to_use).sum()
+    print(f"Discharge before {time_to_use} hours",count)
+    min_time_df = min_time_df[~(min_time_df.hr < time_to_use)]
+
+    # Septic Shock 발생
+    min_time_df.loc[pd.notnull(min_time_df.charttime), "target"] = 1
+    min_time_df.loc[pd.notnull(min_time_df.charttime), "target_hours"] = min_time_df.timediff
+    # Septic Shock 미발생
+    min_time_df.loc[pd.isnull(min_time_df.charttime), "target"] = 0
+    min_time_df.loc[pd.isnull(min_time_df.charttime), "target_hours"] = min_time_df.hr
+
+    target_df = min_time_df[["hadm_id", "target", "target_hours"]].reset_index(drop=True)
+
+    # time_to_observe 값이 있으면, clipping
+    if time_to_observe is not None and time_to_observe > 0:
+      target_df.loc[
+        (target_df.target == 1) & (target_df.target_hours >= time_to_observe),
+        "target"
+      ] = 0
+      target_df.target_hours = target_df.target_hours.clip(0, time_to_observe)
+
+    merged_df = pd.merge(target_df, merged_df.drop("target", axis=1), on=["hadm_id"], how="left")
+
+    cols_to_drop_from_merged = [
+      "target",
+      "target_hours",
+      "icustay_id",
+      "hr",
+      "endtime",
+      "charttime"
+    ]
+    if data_type == "last":
+      merged_df = merged_df[merged_df.hr == time_to_use]
+      x = pd.merge(
+        target_df[["hadm_id"]],
+        merged_df.drop(
+          cols_to_drop_from_merged,
+          axis=1
+        ),
+        on="hadm_id",
+        how="left"
+      ).drop("hadm_id", axis=1).values
+    elif data_type == "stat":
+      group_df = merged_df.drop(
+        cols_to_drop_from_merged,
+        axis=1
+      ).groupby("hadm_id").agg([
+        "mean",
+        "std",
+        "min",
+        "max"
+      ])
+
+      x = pd.merge(
+        target_df[["hadm_id"]],
+        group_df,
+        on="hadm_id",
+        how="left"
+      ).drop("hadm_id", axis=1).values
+    y = target_df.drop("hadm_id", axis=1).values
+    data_key_df = target_df[["hadm_id"]]
+    seq_len_list = np.ones(len(data_key_df))
+    return x, y, data_key_df, seq_len_list
+
+  def get_survival_inputs(
+    self,
+    time_to_use: int = 24,   # 입원 후, 기준으로 사용할 시간
+    time_to_observe: Optional[int] = 100, # 관찰 기간. 입력 시간 이후의 Septic Shock 발생은 추적하지 않음
+    data_type: str = "stat"     # last or stat, 마지막 값 사용하거나, 통계값 사용
+  ):
+    merged_df = self.get_merged_data()
+
+    args = [time_to_use, time_to_observe, data_type]
+    filename_dict = {
+      "x": self.get_survival_input_filename(*args, postfix="x.npy"),
+      "y": self.get_survival_input_filename(*args, postfix="y.npy"),
+      "data_key_df": self.get_survival_input_filename(*args, postfix="data_key_df.pkl"),
+      "seq_len_list": self.get_survival_input_filename(*args, postfix="seq_len_list.npy")
+    }
+
+    if all(self.check_file(filename) for filename in filename_dict.values()):
+      x = self.load_npy(filename_dict["x"])
+      y = np.load("files/" + filename_dict["y"], allow_pickle=True)
+      print(y)
+      y = self.load_npy(filename_dict["y"])
+      data_key_df = self.load_df(filename_dict["data_key_df"])
+      seq_len_list = self.load_npy(filename_dict["seq_len_list"])
+      return x, y, data_key_df, seq_len_list
+
+    x, y, data_key_df, seq_len_list = self._convert_merged_to_survival_input(
+      merged_df,
+      time_to_use,
+      time_to_observe,
+      data_type
     )
 
     self.save_npy(x, filename_dict["x"])
