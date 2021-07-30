@@ -295,8 +295,7 @@ class MIMIC3:
     min_time_df.timediff = min_time_df.timediff / np.timedelta64(1, "h")
 
     # 기준 시간 이전에 Septic Shock이 발생한 환자는 버림
-    count = (min_time_df.timediff <= time_to_use).sum()
-    print(f"Septic shock occured before {time_to_use} hours", count)
+    print(f"Septic shock occured before {time_to_use} hours count", (min_time_df.timediff <= time_to_use).sum())
     min_time_df = min_time_df[~(min_time_df.timediff < time_to_use)]
 
     min_time_df = pd.merge(
@@ -307,8 +306,7 @@ class MIMIC3:
     )
 
     # 기준 시간 이전에 퇴원한 환자는 버림
-    count = (min_time_df.hr < time_to_use).sum()
-    print(f"Discharge before {time_to_use} hours",count)
+    print(f"Discharge before {time_to_use} hours count", (min_time_df.hr < time_to_use).sum())
     min_time_df = min_time_df[~(min_time_df.hr < time_to_use)]
 
     # Septic Shock 발생
