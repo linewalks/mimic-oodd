@@ -391,8 +391,6 @@ class MIMIC3:
 
     if all(self.check_file(filename) for filename in filename_dict.values()):
       x = self.load_npy(filename_dict["x"])
-      y = np.load("files/" + filename_dict["y"], allow_pickle=True)
-      print(y)
       y = self.load_npy(filename_dict["y"])
       data_key_df = self.load_df(filename_dict["data_key_df"])
       seq_len_list = self.load_npy(filename_dict["seq_len_list"])
