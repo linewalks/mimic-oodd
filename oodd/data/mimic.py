@@ -1,9 +1,7 @@
-from functools import total_ordering
 import os
 import numpy as np
 import pandas as pd
 
-from collections import Iterable
 from sqlalchemy import create_engine
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from typing import Optional
