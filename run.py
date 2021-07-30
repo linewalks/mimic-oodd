@@ -34,6 +34,34 @@ age: comma splited string {min_age},{max_age} (ex: 20,30)
     help="Model to use. (rnn)"
   )
   argparser.add_argument(
+    "--data_param",
+    dest="data_param",
+    type=str,
+    default=None,
+    help="""Parameters of Data Load Function.
+Differs by model.
+comma splited string
+
+rnn
+  window_size int (default: 25): size of the window to use for the RNN
+  sequence_length int (default: 50): max length of the sequence to use for the RNN
+
+cox
+deepsurv
+  time_to_use int (default: 24):
+    When to make prediction.
+  time_to_observe int (default: 100):
+    Max time to observe the data.
+    Septic shock after this time will labeled as 0.
+  data_type str (defualt: last):
+    Data prperocess type. (last, stat)
+    last:
+      use data of last time point only.
+    stat:
+      use aggregated data of hour 0 to {time_to_use} hour
+    """
+  )
+  argparser.add_argument(
     "--random_state",
     dest="random_state",
     type=int,
@@ -50,6 +78,7 @@ class Runner:
     scenario_type,
     scenario_param,
     model,
+    data_param,
     random_state=1234
   ):
     from oodd.data.mimic import MIMIC3
@@ -58,6 +87,7 @@ class Runner:
     self.scenario_type = scenario_type
     self.scenario_param = scenario_param
     self.model_type = model
+    self.data_param = data_param
     self.random_state = random_state
 
     self._define_func()
@@ -74,6 +104,25 @@ class Runner:
   def _define_load_func(self):
     if self.model_type == "rnn":
       self.load_func = self.data_loader.get_rnn_inputs
+      if self.data_param is None:
+        self.data_param = {}
+      else:
+        ary = self.data_param.split(",")
+        self.data_param = {
+          "window_size": int(ary[0]),
+          "sequence_length": int(ary[1])
+        }
+    elif self.model_type in ("cox", "deepsurv"):
+      self.load_func = self.data_loader.get_survival_inputs
+      if self.data_param is None:
+        self.data_param = {}
+      else:
+        ary = self.data_param.split(",")
+        self.data_param = {
+          "time_to_use": int(ary[0]),
+          "time_to_observe": int(ary[1]),
+          "data_type": ary[2]
+        }
 
   def _define_split_func(self):
     if self.scenario_type == "gender":
@@ -106,7 +155,9 @@ class Runner:
       self.oodd_evaluator = RNNOODDEvaluator()
 
   def run(self):
-    x, y, data_key_df, seq_len_list = self.load_func()
+    x, y, data_key_df, seq_len_list = self.load_func(
+      **self.data_param
+    )
     train_data, test_data = self.split_func(
       x,
       y,
@@ -161,6 +212,7 @@ def main():
     args.scenario_type,
     args.scenario_param,
     args.model,
+    args.data_param,
     args.random_state
   )
   runner.run()
