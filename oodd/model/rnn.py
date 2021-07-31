@@ -36,7 +36,7 @@ class RNNModel:
     x,
     y,
     validation_split=0.2,
-    epochs=5,
+    epochs=1,
     batch_size=32
   ):
     self.model.fit(
