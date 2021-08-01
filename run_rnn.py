@@ -1,7 +1,7 @@
 from oodd.evaluation.prediction import RNNPredictionEvaluator
 from oodd.evaluation.oodd import RNNOODDEvaluator
 from oodd.model.rnn import RNNModel
-from oodd.utils.args import get_common_args
+from oodd.utils.args import get_common_args, parse_common_args
 from oodd.utils.config import load_config
 from oodd.utils.runner import RunnerBase
 
@@ -22,13 +22,14 @@ def parse_args():
     default=50,
     help="Max length of the sequence to use for the RNN. (default: 50)"
   )
-  return argparser.parse_args()
+  return parse_common_args(argparser)
 
 
 class RNNRunner(RunnerBase):
   def __init__(
     self,
     config,
+    feature_list,
     scenario_type,
     scenario_param,
     window_size,
@@ -37,6 +38,7 @@ class RNNRunner(RunnerBase):
   ):
     super().__init__(
       config,
+      feature_list,
       scenario_type,
       scenario_param,
       random_state
@@ -103,6 +105,7 @@ def main():
 
   runner = RNNRunner(
     config,
+    args.feature_list,
     args.scenario_type,
     args.scenario_param,
     args.window_size,
