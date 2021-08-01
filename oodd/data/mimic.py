@@ -190,6 +190,7 @@ class MIMIC3:
     window_size: int,
     sequence_length: int
   ):
+    print("Converting to RNN Input", window_size, sequence_length)
     key_cols = ["hadm_id", "icustay_id", "hr", "endtime"]
     y_cols = ["target"]
     x_cols = merged_df.columns.drop(key_cols + y_cols + ["charttime", "target"])
@@ -215,7 +216,7 @@ class MIMIC3:
     x = pad_sequences(x)
     y = pad_sequences(y)
 
-    return x, y, data_key_df, seq_len_list
+    return x, y, data_key_df, seq_len_list, list(x_cols)
 
   def get_rnn_input_filename(self, window_size, sequence_length, postfix):
     feature_list_str = "_".join(map(str, self.feature_list + [window_size, sequence_length]))
@@ -232,7 +233,8 @@ class MIMIC3:
       "x": self.get_rnn_input_filename(window_size, sequence_length, "x.npy"),
       "y": self.get_rnn_input_filename(window_size, sequence_length, "y.npy"),
       "data_key_df": self.get_rnn_input_filename(window_size, sequence_length, "data_key_df.pkl"),
-      "seq_len_list": self.get_rnn_input_filename(window_size, sequence_length, "seq_len_list.npy")
+      "seq_len_list": self.get_rnn_input_filename(window_size, sequence_length, "seq_len_list.npy"),
+      "x_cols": self.get_rnn_input_filename(window_size, sequence_length, "x_cols.npy")
     }
 
     if all(self.check_file(filename) for filename in filename_dict.values()):
@@ -240,9 +242,10 @@ class MIMIC3:
       y = self.load_npy(filename_dict["y"])
       data_key_df = self.load_df(filename_dict["data_key_df"])
       seq_len_list = self.load_npy(filename_dict["seq_len_list"])
-      return x, y, data_key_df, seq_len_list
+      x_cols = self.load_npy(filename_dict["x_cols"])
+      return x, y, data_key_df, seq_len_list, x_cols
 
-    x, y, data_key_df, seq_len_list = self._convert_merged_to_rnn_input(
+    x, y, data_key_df, seq_len_list, x_cols = self._convert_merged_to_rnn_input(
       merged_df,
       window_size,
       sequence_length
@@ -252,7 +255,8 @@ class MIMIC3:
     self.save_npy(y, filename_dict["y"])
     self.save_df(data_key_df, filename_dict["data_key_df"])
     self.save_npy(seq_len_list, filename_dict["seq_len_list"])
-    return x, y, data_key_df, seq_len_list
+    self.save_npy(x_cols, filename_dict["x_cols"])
+    return x, y, data_key_df, seq_len_list, x_cols
 
   def get_survival_input_filename(self, time_to_use, time_to_observe, data_type, postfix):
     feature_list_str = "_".join(map(str, self.feature_list + [
@@ -346,7 +350,7 @@ class MIMIC3:
         ),
         on="hadm_id",
         how="left"
-      ).drop("hadm_id", axis=1).values
+      ).drop("hadm_id", axis=1)
     elif data_type == "stat":
       group_df = merged_df.drop(
         cols_to_drop_from_merged,
@@ -363,17 +367,19 @@ class MIMIC3:
         group_df,
         on="hadm_id",
         how="left"
-      ).drop("hadm_id", axis=1).values
+      ).drop("hadm_id", axis=1)
+    x_cols = x.columns.tolist()
+    x = x.values
     y = target_df.drop("hadm_id", axis=1).values
     data_key_df = target_df[["hadm_id"]]
     seq_len_list = np.ones(len(data_key_df))
-    return x, y, data_key_df, seq_len_list
+    return x, y, data_key_df, seq_len_list, x_cols
 
   def get_survival_inputs(
     self,
     time_to_use: int = 24,   # 입원 후, 기준으로 사용할 시간
     time_to_observe: Optional[int] = 100, # 관찰 기간. 입력 시간 이후의 Septic Shock 발생은 추적하지 않음
-    data_type: str = "stat"     # last or stat, 마지막 값 사용하거나, 통계값 사용
+    data_type: str = "last"     # last or stat, 마지막 값 사용하거나, 통계값 사용
   ):
     merged_df = self.get_merged_data()
 
@@ -382,7 +388,8 @@ class MIMIC3:
       "x": self.get_survival_input_filename(*args, postfix="x.npy"),
       "y": self.get_survival_input_filename(*args, postfix="y.npy"),
       "data_key_df": self.get_survival_input_filename(*args, postfix="data_key_df.pkl"),
-      "seq_len_list": self.get_survival_input_filename(*args, postfix="seq_len_list.npy")
+      "seq_len_list": self.get_survival_input_filename(*args, postfix="seq_len_list.npy"),
+      "x_cols": self.get_survival_input_filename(*args, postfix="x_cols.npy")
     }
 
     if all(self.check_file(filename) for filename in filename_dict.values()):
@@ -390,9 +397,10 @@ class MIMIC3:
       y = self.load_npy(filename_dict["y"])
       data_key_df = self.load_df(filename_dict["data_key_df"])
       seq_len_list = self.load_npy(filename_dict["seq_len_list"])
-      return x, y, data_key_df, seq_len_list
+      x_cols = self.load_npy(filename_dict["x_cols"])
+      return x, y, data_key_df, seq_len_list, x_cols
 
-    x, y, data_key_df, seq_len_list = self._convert_merged_to_survival_input(
+    x, y, data_key_df, seq_len_list, x_cols = self._convert_merged_to_survival_input(
       merged_df,
       time_to_use,
       time_to_observe,
@@ -403,6 +411,7 @@ class MIMIC3:
     self.save_npy(y, filename_dict["y"])
     self.save_df(data_key_df, filename_dict["data_key_df"])
     self.save_npy(seq_len_list, filename_dict["seq_len_list"])
+    self.save_npy(x_cols, filename_dict["x_cols"])
     return x, y, data_key_df, seq_len_list
 
   def _split_by_df(
