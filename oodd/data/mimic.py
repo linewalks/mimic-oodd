@@ -14,13 +14,20 @@ class MIMIC3:
     feature_list: list = [
       "bun",
       "bun_cr_ratio",
+      "fio2",
       "gcs",
+      "heartrate",
       "pao2",
       "ph_art",
+      "platelet",
       "resprate",
       "shock_idx",
+      "sofa_score|hepatic",
+      "sofa_score|renal",
+      "sofa_score|neurologic",
       "sysbp",
-      "urineoutput_6hr"
+      "urineoutput_6hr",
+      "wbc"
     ],
     mimic_schema: str = "mimiciii",
     sepsis_schema: str  ="mimiciii_sepsis",
@@ -31,7 +38,7 @@ class MIMIC3:
     self.engine = create_engine(db_uri)
     self.conn = self.engine.connect()
 
-    self.feature_list = feature_list
+    self.feature_list = list(sorted(feature_list))
 
     self.mimic_schema = mimic_schema
     self.sepsis_schema = sepsis_schema
@@ -79,14 +86,19 @@ class MIMIC3:
 
     feature_df_list = []
     for feature in self.feature_list:
-      if isinstance(feature, str):
-        table_name, col_name = feature, None
+      ary = feature.split("|")
+      if len(ary) > 1:
+        table_name, col_name = ary[0], ary[1]
       else:
-        table_name, col_name = feature
+        table_name, col_name = feature, feature
+
+      load_func = self.get_charttime_feature
+      if table_name == "sofa_score":
+        load_func = self.get_hr_feature
 
       each_df = pd.merge(
         key_df,
-        self.get_feature(table_name, col_name),
+        load_func(table_name, col_name),
         on=key_cols,
         how="left"
       ).drop(key_cols, axis=1)
@@ -99,14 +111,59 @@ class MIMIC3:
     self.save_df(merged_df, filename)
     return merged_df
 
-  def get_feature(
+  def get_hr_feature(
     self,
     table_name: str,
-    col_name: Optional[str] = None,
+    col_name: Optional[str] = None
   ):
     if col_name is None:
       col_name = table_name
-    print("Loading Feature", table_name, col_name)
+    print("Loading HR Feature", table_name, col_name)
+
+    df = pd.read_sql(f"""
+      SELECT
+        icustay_hours.icustay_id,
+        icustay_hours.hr,
+        endtime,
+        {col_name}
+      FROM
+        {self.derived_schema}.icustay_hours AS icustay_hours
+      LEFT JOIN
+        (
+          -- 한 icustay_id, hr에 중복된 값을 가지는 경우가 있음 
+          -- 평균으로 묶어서 처리
+          SELECT
+            icustay_id,
+            hr,
+            AVG({col_name}) AS {col_name}
+          FROM
+            {self.trewscore_feature_schema}.{table_name}
+          GROUP BY
+            icustay_id,
+            hr
+        ) AS feature
+      ON
+        icustay_hours.icustay_id = feature.icustay_id
+        AND icustay_hours.hr = feature.hr
+      WHERE
+        icustay_hours.hr > 0
+      ORDER BY
+        icustay_hours.icustay_id,
+        endtime
+    """, self.conn)
+
+    df[col_name] = df[col_name].fillna(method="ffill").fillna(method="bfill")
+    print("Loading HR Feature", table_name, col_name, "Done", df.shape)
+    return df
+
+  def get_charttime_feature(
+    self,
+    table_name: str,
+    col_name: Optional[str] = None
+  ):
+    if col_name is None:
+      col_name = table_name
+    print("Loading Charttime Feature", table_name, col_name)
 
     df = pd.read_sql(f"""
       SELECT
@@ -141,7 +198,7 @@ class MIMIC3:
     """, self.conn)
 
     df[col_name] = df[col_name].fillna(method="ffill").fillna(method="bfill")
-    print("Loading Feature", table_name, col_name, "Done", df.shape)
+    print("Loading Charttime Feature", table_name, col_name, "Done", df.shape)
     return df
 
   def get_target(self):
