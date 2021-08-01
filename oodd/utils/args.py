@@ -7,6 +7,31 @@ def get_common_args():
     formatter_class=argparse.RawTextHelpFormatter
   )
   argparser.add_argument(
+    "--feature_list",
+    dest="feature_list",
+    type=str,
+    default=None,
+    help="""Comma separated string of features to use.
+Available features are
+  bun
+  bun_cr_ratio
+  fio2
+  gcs
+  heartrate
+  pao2
+  ph_art
+  platelet
+  resprate
+  shock_idx
+  sofa_score|hepatic
+  sofa_score|renal
+  sofa_score|neurologic
+  sysbp
+  urineoutput_6hr
+  wbc
+    """
+  )
+  argparser.add_argument(
     "--scenario_type",
     dest="scenario_type",
     type=str,
@@ -34,3 +59,9 @@ age: comma splited string {min_age},{max_age} (ex: 20,30)
   )
   return argparser
 
+
+def parse_common_args(argparser):
+  args = argparser.parse_args()
+  if args.feature_list:
+    args.feature_list = args.feature_list.split(",")
+  return args

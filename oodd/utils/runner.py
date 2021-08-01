@@ -5,11 +5,19 @@ class RunnerBase:
   def __init__(
     self,
     config,
+    feature_list,
     scenario_type,
     scenario_param,
     random_state
   ):
-    self.data_loader = MIMIC3(config["DB_URI"])
+    data_loader_param = {}
+    if feature_list:
+      data_loader_param["feature_list"] = feature_list
+
+    self.data_loader = MIMIC3(
+      config["DB_URI"],
+      **data_loader_param
+    )
     self.scenario_type = scenario_type
     self.scenario_param = scenario_param
     self.random_state = random_state

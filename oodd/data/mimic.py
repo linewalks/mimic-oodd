@@ -469,7 +469,7 @@ class MIMIC3:
     self.save_df(data_key_df, filename_dict["data_key_df"])
     self.save_npy(seq_len_list, filename_dict["seq_len_list"])
     self.save_npy(x_cols, filename_dict["x_cols"])
-    return x, y, data_key_df, seq_len_list
+    return x, y, data_key_df, seq_len_list, x_cols
 
   def _split_by_df(
     self,

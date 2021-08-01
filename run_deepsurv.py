@@ -1,5 +1,5 @@
 from oodd.model.deepsurv import DeepSurvModel
-from oodd.utils.args import get_common_args
+from oodd.utils.args import get_common_args, parse_common_args
 from oodd.utils.config import load_config
 from oodd.utils.runner import RunnerBase
 
@@ -34,13 +34,14 @@ stat:
   use aggregated data. (mean, min, max, std)
     """
   )
-  return argparser.parse_args()
+  return parse_common_args(argparser)
 
 
 class DeepSurvRunner(RunnerBase):
   def __init__(
     self,
     config,
+    feature_list,
     scenario_type,
     scenario_param,
     time_to_use,
@@ -50,6 +51,7 @@ class DeepSurvRunner(RunnerBase):
   ):
     super().__init__(
       config,
+      feature_list,
       scenario_type,
       scenario_param,
       random_state
@@ -112,6 +114,7 @@ def main():
 
   runner = DeepSurvRunner(
     config,
+    args.feature_list,
     args.scenario_type,
     args.scenario_param,
     args.time_to_use,
