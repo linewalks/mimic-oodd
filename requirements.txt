@@ -4,3 +4,4 @@ sqlalchemy
 tensorflow
 scikit-learn
 lifelines
+git+https://github.com/liupei101/TFDeepSurv.git
