@@ -8,7 +8,7 @@ class DeepSurvModel:
   def __init__(
     self,
     num_features,
-    dense_nodes=[6, 3, 1]
+    dense_nodes=[32, 32, 1]
   ):
     self.num_features = num_features
     self.dense_nodes = dense_nodes
@@ -17,13 +17,13 @@ class DeepSurvModel:
 
   def build_model(self):
     nn_config = {
-        "learning_rate": 0.1,
+        "learning_rate": 5e-4, #0.1,
         "learning_rate_decay": 1.0,
-        "activation": "relu", 
-        "L1_reg": 3.4e-5, 
-        "L2_reg": 8.8e-5, 
-        "optimizer": "sgd",
-        "dropout_keep_prob": 1.0,
+        "activation": "relu",
+        "L1_reg": 0.0, # 3.4e-5, 
+        "L2_reg": 0.0, # 8.8e-5, 
+        "optimizer": "adam",
+        "dropout_keep_prob": 0.5,
         "seed": 1
     }
 
@@ -52,7 +52,7 @@ class DeepSurvModel:
     watch_list = self.model.train(
       df[x_cols],
       df[["Y"]],
-      num_steps=1900,
+      num_steps=2000,
       num_skip_steps=100,
     )
     print("Last metric", watch_list["metrics"][-1])

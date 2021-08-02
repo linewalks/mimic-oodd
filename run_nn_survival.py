@@ -1,4 +1,6 @@
-from oodd.model.deepsurv import DeepSurvModel
+from oodd.evaluation.prediction import PredictionEvaluator
+from oodd.evaluation.oodd import OODDEvaluator
+from oodd.model.nn import NNModel
 from oodd.utils.args import get_common_args, parse_common_args
 from oodd.utils.config import load_config
 from oodd.utils.runner import RunnerBase
@@ -37,7 +39,7 @@ stat:
   return parse_common_args(argparser)
 
 
-class DeepSurvRunner(RunnerBase):
+class NNRunner(RunnerBase):
   def __init__(
     self,
     config,
@@ -81,40 +83,41 @@ class DeepSurvRunner(RunnerBase):
       **self.split_param
     )
 
-    model = DeepSurvModel(
-      x.shape[-1]
+    model = NNModel(
+      x.shape[-1],
+      1
     )
     model.train(
       train_data["x"],
-      train_data["y"],
-      x_cols
+      train_data["y"][:, 0]
     )
 
-    score = model.score(
-      test_data["x"],
-      test_data["y"],
-      x_cols
+    pred_y = model.predict(
+      test_data["x"]
     )
-    print("Score", score)
 
-    # train_ood = model.predict_ood(train_data["x"])
-    # test_ood = model.predict_ood(test_data["x"])
+    prediction_result = PredictionEvaluator().evaluate(
+      test_data["y"][:, 0],
+      pred_y
+    )
+    print("Prediction Result", prediction_result)
 
-    # oodd_result = self.oodd_evaluator.evaluate(
-    #   train_ood,
-    #   test_ood,
-    #   test_data["oodd_label"],
-    #   train_data["seq_len_list"],
-    #   test_data["seq_len_list"]
-    # )
-    # print("OODD Result", oodd_result)
+    train_ood = model.predict_ood(train_data["x"])
+    test_ood = model.predict_ood(test_data["x"])
+
+    oodd_result = OODDEvaluator().evaluate(
+      train_ood,
+      test_ood,
+      test_data["oodd_label"]
+    )
+    print("OODD Result", oodd_result)
 
 
 def main():
   args = parse_args()
   config = load_config()
 
-  runner = DeepSurvRunner(
+  runner = NNRunner(
     config,
     args.feature_list,
     args.scenario_type,

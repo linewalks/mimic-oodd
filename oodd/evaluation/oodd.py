@@ -12,6 +12,9 @@ class OODDEvaluator:
     oodd_label
   ):
     train_mean = train_ood.mean(axis=0)
+    print(train_ood.shape)
+    print(train_mean)
+    print(train_ood.std(axis=0))
 
     cov = np.cov(train_ood.T)
     vi = np.linalg.inv(cov)
