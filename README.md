@@ -47,3 +47,16 @@ python run_deepsurv.py
 # See help for more tunable parameters.
 python run_deepsurv.py --help
 ```
+
+#### NN
+
+* Run Neural Network Model with Survival Data
+  * Duration data will not be used.
+
+```
+# Run by default setting
+python run_nn.py
+
+# See help for more tunable parameters.
+python run_nn.py --help
+```
