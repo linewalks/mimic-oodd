@@ -27,7 +27,8 @@ class MIMIC3:
       "sofa_score|neurologic",
       "sysbp",
       "urineoutput_6hr",
-      "wbc"
+      "wbc",
+      "prescriptions|drug|10000"
     ],
     mimic_schema: str = "mimiciii",
     sepsis_schema: str  ="mimiciii_sepsis",
@@ -87,18 +88,17 @@ class MIMIC3:
     feature_df_list = []
     for feature in self.feature_list:
       ary = feature.split("|")
-      if len(ary) > 1:
-        table_name, col_name = ary[0], ary[1]
-      else:
-        table_name, col_name = feature, feature
+      table_name = ary[0]
 
       load_func = self.get_charttime_feature
       if table_name == "sofa_score":
         load_func = self.get_hr_feature
+      elif table_name == "prescriptions":
+        load_func = self.get_prescriptions_feature
 
       each_df = pd.merge(
         key_df,
-        load_func(table_name, col_name),
+        load_func(*ary),
         on=key_cols,
         how="left"
       ).drop(key_cols, axis=1)
@@ -110,6 +110,68 @@ class MIMIC3:
 
     self.save_df(merged_df, filename)
     return merged_df
+
+  def get_prescriptions_feature(
+    self,
+    table_name: str,
+    col_name: str,
+    min_count: int = 500
+  ):
+    print("Loading Prescription", table_name, col_name)
+
+    df = pd.read_sql(f"""
+      SELECT
+        icustay_hours.icustay_id,
+        icustay_hours.hr,
+        icustay_hours.endtime,
+        prescriptions.{col_name},
+        prescriptions.cnt
+      FROM
+        {self.derived_schema}.icustay_hours AS icustay_hours
+      LEFT JOIN
+        (
+          SELECT
+            icustay_id,
+            startdate,
+            {col_name},
+            COUNT({col_name}) AS cnt
+          FROM
+            {self.mimic_schema}.prescriptions prescriptions
+          WHERE
+            {col_name} IN (
+              SELECT
+                {col_name}
+              FROM
+                {self.mimic_schema}.prescriptions
+              GROUP BY
+                {col_name}
+              HAVING
+                COUNT(*) > {min_count}
+            )
+          GROUP BY
+            icustay_id,
+            startdate,
+            {col_name}
+        ) prescriptions
+      ON
+        icustay_hours.icustay_id = prescriptions.icustay_id AND
+        DATE_TRUNC('day', icustay_hours.endtime) = prescriptions.startdate
+      WHERE
+        icustay_hours.hr > 0 AND
+        drug IS NOT NULL
+      ORDER BY
+        icustay_hours.icustay_id,
+        endtime
+    """, self.conn)
+
+    df = pd.pivot_table(
+      data=df[["icustay_id", "hr", "endtime", col_name, "cnt"]],
+      index=["icustay_id", "hr", "endtime"],
+      columns=[col_name],
+      aggfunc="sum",
+      fill_value=0
+    )
+    return df
 
   def get_hr_feature(
     self,
@@ -387,7 +449,12 @@ class MIMIC3:
       ] = 0
       target_df.target_hours = target_df.target_hours.clip(0, time_to_observe)
 
-    merged_df = pd.merge(target_df, merged_df.drop("target", axis=1), on=["hadm_id"], how="left")
+    merged_df = pd.merge(
+      target_df,
+      merged_df.drop("target", axis=1),
+      on=["hadm_id"],
+      how="left"
+    ).fillna(0.0)
 
     cols_to_drop_from_merged = [
       "target",
