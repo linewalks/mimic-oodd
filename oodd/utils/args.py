@@ -28,7 +28,11 @@ Available features are
   sofa_score|neurologic
   sysbp
   urineoutput_6hr
-  wbc
+  wbc,
+  prescriptions|drug|10000
+    {table_name}|{column_name}|{min_count}
+
+    min_count: drugs used less than min_count times in the whole data will be ignored.
     """
   )
   argparser.add_argument(
