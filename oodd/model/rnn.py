@@ -7,11 +7,13 @@ class RNNModel:
     self,
     num_features,
     num_classes,
-    rnn_nodes=[64, 64]
+    rnn_nodes=[64, 64],
+    return_sequences=True
   ):
     self.num_features = num_features
     self.num_classes = num_classes
     self.rnn_nodes = rnn_nodes
+    self.return_sequences = return_sequences
 
     self.build_model()
 
@@ -19,8 +21,10 @@ class RNNModel:
     model = Sequential()
     model.add(Input(shape=(None, self.num_features)))
 
-    for node in self.rnn_nodes:
-      model.add(LSTM(node, return_sequences=True))
+    for idx, node in enumerate(self.rnn_nodes):
+      is_last = idx == len(self.rnn_nodes) - 1
+      return_sequences = self.return_sequences or not is_last
+      model.add(LSTM(node, return_sequences=return_sequences))
 
     last_activation = "sigmoid" if self.num_classes == 1 else "softmax"
     model.add(Dense(self.num_classes, activation=last_activation))

@@ -60,3 +60,16 @@ python run_nn.py
 # See help for more tunable parameters.
 python run_nn.py --help
 ```
+
+#### RNN Survival
+
+* Run Neural Network Model with Survival Data
+  * Duration data will not be used.
+
+```
+# Run by default setting
+python run_rnn_survival.py
+
+# See help for more tunable parameters.
+python run_rnn_survival.py --help
+```
