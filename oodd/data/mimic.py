@@ -65,7 +65,7 @@ class MIMIC3:
     np.save(self.get_file_path(filename), ary)
 
   def load_npy(self, filename: str) -> np.ndarray:
-    return np.load(self.get_file_path(filename))
+    return np.load(self.get_file_path(filename), allow_pickle=True)
 
   def check_file(self, filename: str) -> bool:
     return os.path.exists(self.get_file_path(filename))
@@ -475,6 +475,7 @@ class MIMIC3:
         on="hadm_id",
         how="left"
       ).drop("hadm_id", axis=1)
+      x_cols = x.columns.tolist()
     elif data_type == "stat":
       group_df = merged_df.drop(
         cols_to_drop_from_merged,
@@ -492,8 +493,18 @@ class MIMIC3:
         on="hadm_id",
         how="left"
       ).drop("hadm_id", axis=1)
-    x_cols = x.columns.tolist()
-    x = x.values
+      x_cols = x.columns.tolist()
+    elif data_type == "rnn":
+      x_cols = merged_df.columns.drop(["hadm_id"] + cols_to_drop_from_merged)
+      x = np.array([group_df.values for _, group_df in merged_df.drop(
+        cols_to_drop_from_merged,
+        axis=1
+      ).groupby(
+        "hadm_id"
+      )])
+
+    if isinstance(x, pd.DataFrame):
+      x = x.values
     y = target_df.drop("hadm_id", axis=1).values
     data_key_df = target_df[["hadm_id"]]
     seq_len_list = np.ones(len(data_key_df))

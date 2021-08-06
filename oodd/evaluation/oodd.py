@@ -12,9 +12,6 @@ class OODDEvaluator:
     oodd_label
   ):
     train_mean = train_ood.mean(axis=0)
-    print(train_ood.shape)
-    print(train_mean)
-    print(train_ood.std(axis=0))
 
     cov = np.cov(train_ood.T)
     vi = np.linalg.inv(cov)
@@ -42,12 +39,10 @@ class RNNOODDEvaluator(OODDEvaluator):
       each_ood[-seq_len:]
       for seq_len, each_ood in zip(test_seq_len_list, test_ood)
     ])
-    print(oodd_label.shape)
     new_oodd_label = np.concatenate([
       [each_target] * seq_len
       for seq_len, each_target in zip(test_seq_len_list, oodd_label)
     ])
-    print(new_oodd_label.shape)
     return super().evaluate(
       new_train_ood,
       new_test_ood,
