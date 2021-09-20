@@ -1,7 +1,9 @@
+import hashlib
 import os
 import numpy as np
 import pandas as pd
 
+from sklearn.model_selection import train_test_split
 from sqlalchemy import create_engine
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from typing import Optional
@@ -16,19 +18,25 @@ class MIMIC3:
       "bun_cr_ratio",
       "fio2",
       "gcs",
-      "heartrate",
-      "pao2",
-      "ph_art",
-      "platelet",
-      "resprate",
+      # "heartrate",
+      # "pao2",
+      # "ph_art",
+      # "platelet",
+      # "resprate",
       "shock_idx",
       "sofa_score|hepatic",
       "sofa_score|renal",
       "sofa_score|neurologic",
-      "sysbp",
+      # "sysbp",
       "urineoutput_6hr",
       "wbc",
-      "prescriptions|drug|10000"
+      "prescriptions|formulary_drug_cd|5000",
+      # "icd_diag|chron_liver",
+      # "icd_diag|immunocomp",
+      # "icd_diag|hema_malig",
+      # "icd_diag|chron_heart",
+      # "icd_diag|chron_organ",
+      # "icd_diag|diabetes",
     ],
     mimic_schema: str = "mimiciii",
     sepsis_schema: str  ="mimiciii_sepsis",
@@ -53,7 +61,11 @@ class MIMIC3:
     self.conn.close()
 
   def get_file_path(self, filename: str):
-    return os.path.join(self.data_save_path, filename)
+    filename, file_ext = filename.split(".")
+    enc = hashlib.md5()
+    enc.update(filename.encode("utf-8"))
+    filename = enc.hexdigest()
+    return os.path.join(self.data_save_path, f"{filename}.{file_ext}")
 
   def save_df(self, df: pd.DataFrame, filename: str) -> None:
     df.to_pickle(self.get_file_path(filename))
@@ -95,6 +107,8 @@ class MIMIC3:
         load_func = self.get_hr_feature
       elif table_name == "prescriptions":
         load_func = self.get_prescriptions_feature
+      elif table_name == "icd_diag":
+        load_func = self.get_hadm_feature
 
       each_df = pd.merge(
         key_df,
@@ -110,6 +124,42 @@ class MIMIC3:
 
     self.save_df(merged_df, filename)
     return merged_df
+
+  def get_hadm_feature(
+    self,
+    table_name: str,
+    col_name: Optional[str] = None
+  ):
+    if col_name is None:
+      col_name = table_name
+    print("Loading HADM_ID Feature", table_name, col_name)
+
+    df = pd.read_sql(f"""
+      SELECT
+        icustay_hours.icustay_id,
+        icustay_hours.hr,
+        endtime,
+        {col_name}
+      FROM
+        {self.derived_schema}.icustay_hours AS icustay_hours
+        LEFT JOIN
+          {self.mimic_schema}.icustays AS icustays
+        ON
+          icustay_hours.icustay_id = icustays.icustay_id
+        LEFT JOIN
+          {self.trewscore_feature_schema}.{table_name} AS feature
+        ON
+          icustays.hadm_id = feature.hadm_id
+      WHERE
+        icustay_hours.hr > 0
+      ORDER BY
+        icustay_hours.icustay_id,
+        endtime
+    """, self.conn)
+
+    df[col_name] = df[col_name].fillna(method="ffill").fillna(method="bfill")
+    print("Loading HADM_ID Feature", table_name, col_name, "Done", df.shape)
+    return df
 
   def get_prescriptions_feature(
     self,
@@ -158,7 +208,7 @@ class MIMIC3:
         DATE_TRUNC('day', icustay_hours.endtime) = prescriptions.startdate
       WHERE
         icustay_hours.hr > 0 AND
-        drug IS NOT NULL
+        {col_name} IS NOT NULL
       ORDER BY
         icustay_hours.icustay_id,
         endtime
@@ -603,6 +653,43 @@ class MIMIC3:
       "data_key_df": test_data_key_df,
       "seq_len_list": test_seq_key_list,
       "oodd_label": oodd_label
+    }
+
+  def _split_by_random(
+    self,
+    x,
+    y,
+    data_key_df,
+    seq_len_list,
+    test_ratio: float = 0.2,
+    random_state: int = 1234
+  ):
+    hadm_list = data_key_df.hadm_id.unique()
+    train_patients, test_patients = train_test_split(hadm_list, test_size=test_ratio, random_state=random_state)
+
+    train_idx = data_key_df.hadm_id.isin(train_patients)
+    test_idx = data_key_df.hadm_id.isin(test_patients)
+
+    train_x, train_y = x[train_idx], y[train_idx]
+    train_data_key_df = data_key_df[train_idx]
+    train_seq_key_list = seq_len_list[train_idx]
+
+    test_x, test_y = x[test_idx], y[test_idx]
+    test_data_key_df = data_key_df[test_idx]
+    test_seq_key_list = seq_len_list[test_idx]
+
+    return {
+      "x": train_x,
+      "y": train_y,
+      "data_key_df": train_data_key_df,
+      "seq_len_list": train_seq_key_list,
+    }, {
+      "x": test_x,
+      "y": test_y,
+      "data_key_df": test_data_key_df,
+      "seq_len_list": test_seq_key_list,
+      # OODD has no meaning for random spliting
+      "oodd_label": np.random.randint(0, 2, len(test_y))
     }
 
   def _split_by_gender(

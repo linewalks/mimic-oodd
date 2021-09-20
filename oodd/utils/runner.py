@@ -41,3 +41,6 @@ class RunnerBase:
           "train_age_min": int(parma_ary[0]),
           "train_age_max": int(parma_ary[1])
         })
+    elif self.scenario_type == "random":
+      self.split_func = self.data_loader._split_by_random
+      self.split_param = {}

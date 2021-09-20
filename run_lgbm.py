@@ -1,8 +1,6 @@
-import numpy as np
-
 from oodd.evaluation.prediction import PredictionEvaluator
 from oodd.evaluation.oodd import OODDEvaluator
-from oodd.model.rnn import RNNModel
+from oodd.model.lgbm import LGBMModel
 from oodd.utils.args import get_common_args, parse_common_args
 from oodd.utils.config import load_config
 from oodd.utils.runner import RunnerBase
@@ -26,10 +24,22 @@ def parse_args():
 Septic shock after this time will labeled as 0. (default: 100)
     """
   )
+  argparser.add_argument(
+    "--data_type",
+    dest="data_type",
+    type=str,
+    default="last",
+    help="""Data prperocess type. (last, stat)
+last:
+  use data of last time point only.
+stat:
+  use aggregated data. (mean, min, max, std)
+    """
+  )
   return parse_common_args(argparser)
 
 
-class RNNRunner(RunnerBase):
+class NNRunner(RunnerBase):
   def __init__(
     self,
     config,
@@ -38,6 +48,7 @@ class RNNRunner(RunnerBase):
     scenario_param,
     time_to_use,
     time_to_observe,
+    data_type,
     random_state=1234
   ):
     super().__init__(
@@ -50,21 +61,18 @@ class RNNRunner(RunnerBase):
 
     self.time_to_use = time_to_use
     self.time_to_observe = time_to_observe
-
-    self._define_split_func()
+    self.data_type = data_type
 
   def close(self):
     self.data_loader.close()
 
   def run(self):
-    x, y, data_key_df, seq_len_list, _ = self.data_loader.get_survival_inputs(
-      time_to_use=self.time_to_use,
-      time_to_observe=self.time_to_observe,
-      data_type="rnn"
+    x, y, data_key_df, seq_len_list, x_cols = self.data_loader.get_survival_inputs(
+      self.time_to_use,
+      self.time_to_observe,
+      self.data_type
     )
-
-    feat_mean = x.mean(axis=0).mean(axis=0)
-    x = x / feat_mean
+    x = x / x.mean(axis=0)
 
     train_data, test_data = self.split_func(
       x,
@@ -75,11 +83,7 @@ class RNNRunner(RunnerBase):
       **self.split_param
     )
 
-    model = RNNModel(
-      x.shape[-1],
-      1,
-      return_sequences=False
-    )
+    model = LGBMModel()
     model.train(
       train_data["x"],
       train_data["y"][:, 0]
@@ -95,36 +99,29 @@ class RNNRunner(RunnerBase):
     )
     print("Prediction Result", prediction_result)
 
-    train_ood = model.predict_ood(train_data["x"])
-    test_ood = model.predict_ood(test_data["x"])
+    # train_ood = model.predict_ood(train_data["x"])
+    # test_ood = model.predict_ood(test_data["x"])
 
-    oodd_result = OODDEvaluator().evaluate(
-      train_ood,
-      test_ood,
-      test_data["oodd_label"]
-    )
-    print("OODD Result", oodd_result)
-
-    np.save("train_ood.npy", train_ood)
-    np.save("train_x.npy", train_data["x"])
-    np.save("train_y.npy", train_data["y"])
-    np.save("test_ood.npy", test_ood)
-    np.save("test_y.npy", test_data["y"])
-    np.save("test_pred.npy", pred_y)
-    np.save("oodd_label.npy", test_data["oodd_label"])
+    # oodd_result = OODDEvaluator().evaluate(
+    #   train_ood,
+    #   test_ood,
+    #   test_data["oodd_label"]
+    # )
+    # print("OODD Result", oodd_result)
 
 
 def main():
   args = parse_args()
   config = load_config()
 
-  runner = RNNRunner(
+  runner = NNRunner(
     config,
     args.feature_list,
     args.scenario_type,
     args.scenario_param,
     args.time_to_use,
     args.time_to_observe,
+    args.data_type,
     args.random_state
   )
   runner.run()
