@@ -14,29 +14,32 @@ class MIMIC3:
     self,
     db_uri: str,
     feature_list: list = [
-      "bun",
-      "bun_cr_ratio",
-      "fio2",
-      "gcs",
       # "heartrate",
       # "pao2",
       # "ph_art",
       # "platelet",
       # "resprate",
-      "shock_idx",
-      "sofa_score|hepatic",
-      "sofa_score|renal",
-      "sofa_score|neurologic",
       # "sysbp",
-      "urineoutput_6hr",
-      "wbc",
-      "prescriptions|formulary_drug_cd|5000",
       # "icd_diag|chron_liver",
       # "icd_diag|immunocomp",
       # "icd_diag|hema_malig",
       # "icd_diag|chron_heart",
       # "icd_diag|chron_organ",
       # "icd_diag|diabetes",
+
+      "bun",
+      "bun_cr_ratio",
+      "fio2",
+      "gcs",
+      "shock_idx",
+      "sofa_score|hepatic",
+      "sofa_score|renal",
+      "sofa_score|neurologic",
+      "urineoutput_6hr",
+      "wbc",
+      "prescriptions|formulary_drug_cd|5000",
+      "demographic",
+      "icustays"
     ],
     mimic_schema: str = "mimiciii",
     sepsis_schema: str  ="mimiciii_sepsis",
@@ -85,11 +88,16 @@ class MIMIC3:
   def _get_merged_filename(self) -> str:
     return "_".join(self.feature_list) + ".pkl"
 
+  def get_dummies_with_nested_column_names(self, series, parent_col_name):
+    df = pd.get_dummies(series)
+    df.columns = [(parent_col_name, col) for col in df.columns]
+    return df
+
   def get_merged_data(
     self,
   ) -> pd.DataFrame:
-    print("Loading Merged Data")
     filename = self._get_merged_filename()
+    print("Loading Merged Data", self.get_file_path(filename))
     if self.check_file(filename):
       return self.load_df(filename)
 
@@ -107,6 +115,10 @@ class MIMIC3:
         load_func = self.get_hr_feature
       elif table_name == "prescriptions":
         load_func = self.get_prescriptions_feature
+      elif table_name == "demographic":
+        load_func = self.get_demographic_feature
+      elif table_name == "icustays":
+        load_func = self.get_icustays_feature
       elif table_name == "icd_diag":
         load_func = self.get_hadm_feature
 
@@ -219,9 +231,110 @@ class MIMIC3:
       index=["icustay_id", "hr", "endtime"],
       columns=[col_name],
       aggfunc="sum",
-      fill_value=0
+      fill_value=None
     )
+
+    df = df.clip(0, 1)
+    df[df.eq(0)] = None
+
+    df = df.sort_values(["icustay_id", "hr"])
+    filled_df = df.groupby("icustay_id").fillna(method="ffill")
+
+    df = pd.concat([
+      df.reset_index()[["icustay_id", "hr", "endtime"]],
+      filled_df.reset_index(drop=True)
+    ], axis=1)
+
     return df
+
+  def get_demographic_feature(
+    self,
+    table_name: str
+  ):
+    print("Loading Demographic")
+    df = pd.read_sql(f"""
+      SELECT
+        icustays.subject_id,
+        icustay_hours.icustay_id,
+        icustay_hours.hr,
+        icustay_hours.endtime
+      FROM
+        {self.derived_schema}.icustay_hours AS icustay_hours
+        JOIN
+          {self.mimic_schema}.icustays AS icustays
+        ON
+          icustays.icustay_id = icustay_hours.icustay_id
+      WHERE
+        icustay_hours.hr > 0
+      ORDER BY
+        icustay_hours.icustay_id,
+        endtime
+    """, self.conn)
+
+    demo_df = pd.read_sql(f"""
+      SELECT
+        *
+      FROm
+        {self.mimic_schema}.patients
+    """, self.conn)
+
+    age_df = pd.merge(
+      df[["subject_id", "endtime"]],
+      demo_df[["subject_id", "dob"]],
+      on="subject_id",
+      how="left",
+      validate="many_to_one"
+    )
+
+    age_df["agey"] = ((age_df.endtime.subtract(age_df.dob)) / 365).dt.days
+    age_df["agem"] = ((age_df.endtime.subtract(age_df.dob)) / 30).dt.days
+    age_df.agem.loc[age_df.agem >= (300 * 12)] -= 211 * 12
+    age_df.agey.loc[age_df.agey >= 300] -= 211
+
+    gender_df = pd.merge(
+      df[["subject_id"]],
+      demo_df[["subject_id", "gender"]],
+      how="left",
+      on="subject_id",
+      validate="many_to_one"
+    )
+    gender_df = self.get_dummies_with_nested_column_names(gender_df.gender, "gender")
+
+    return pd.concat([
+      df[["icustay_id", "hr", "endtime"]],
+      age_df[["agey", "agem"]],
+      gender_df
+    ], axis=1)
+
+  def get_icustays_feature(
+    self,
+    table_name: str
+  ):
+    print("Loading ICUStays")
+    df = pd.read_sql(f"""
+      SELECT
+        icustays.subject_id,
+        icustay_hours.icustay_id,
+        icustay_hours.hr,
+        icustay_hours.endtime,
+        icustays.first_careunit
+      FROM
+        {self.derived_schema}.icustay_hours AS icustay_hours
+        JOIN
+          {self.mimic_schema}.icustays AS icustays
+        ON
+          icustays.icustay_id = icustay_hours.icustay_id
+      WHERE
+        icustay_hours.hr > 0
+      ORDER BY
+        icustay_hours.icustay_id,
+        endtime
+    """, self.conn)
+
+    return pd.concat([
+      df[["icustay_id", "hr", "endtime"]],
+      self.get_dummies_with_nested_column_names(df.first_careunit, "careunit")
+    ], axis=1)
 
   def get_hr_feature(
     self,
@@ -566,8 +679,6 @@ class MIMIC3:
     time_to_observe: Optional[int] = 100, # 관찰 기간. 입력 시간 이후의 Septic Shock 발생은 추적하지 않음
     data_type: str = "last"     # last or stat, 마지막 값 사용하거나, 통계값 사용
   ):
-    merged_df = self.get_merged_data()
-
     args = [time_to_use, time_to_observe, data_type]
     filename_dict = {
       "x": self.get_survival_input_filename(*args, postfix="x.npy"),
@@ -577,6 +688,8 @@ class MIMIC3:
       "x_cols": self.get_survival_input_filename(*args, postfix="x_cols.npy")
     }
 
+    print("Checking File", self.get_file_path(filename_dict["x"]))
+
     if all(self.check_file(filename) for filename in filename_dict.values()):
       x = self.load_npy(filename_dict["x"])
       y = self.load_npy(filename_dict["y"])
@@ -585,6 +698,7 @@ class MIMIC3:
       x_cols = self.load_npy(filename_dict["x_cols"])
       return x, y, data_key_df, seq_len_list, x_cols
 
+    merged_df = self.get_merged_data()
     x, y, data_key_df, seq_len_list, x_cols = self._convert_merged_to_survival_input(
       merged_df,
       time_to_use,

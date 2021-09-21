@@ -99,6 +99,16 @@ class NNRunner(RunnerBase):
     )
     print("Prediction Result", prediction_result)
 
+    # import pandas as pd
+
+    # feature_importances = model.model.feature_importances_
+    # fi_df = pd.concat([
+    #     pd.Series(feature_importances, name="value"),
+    #     pd.Series(x_cols, name="feature")
+    # ], axis=1).sort_values("value", ascending=False).reset_index(drop=True)
+    # print(fi_df.head(50))
+
+
     # train_ood = model.predict_ood(train_data["x"])
     # test_ood = model.predict_ood(test_data["x"])
 
