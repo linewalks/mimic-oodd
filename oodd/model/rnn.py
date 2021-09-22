@@ -1,8 +1,9 @@
 
 from tensorflow.keras.initializers import TruncatedNormal
-from tensorflow.keras.layers import Input, LSTM, Dense, Activation
+from tensorflow.keras.layers import Input, LSTM, Dense, Activation, BatchNormalization
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.metrics import AUC
 
 
 class RNNModel:
@@ -27,7 +28,14 @@ class RNNModel:
     for idx, node in enumerate(self.rnn_nodes):
       is_last = idx == len(self.rnn_nodes) - 1
       return_sequences = self.return_sequences or not is_last
-      model.add(LSTM(node, return_sequences=return_sequences))
+      model.add(BatchNormalization())
+      model.add(
+        LSTM(
+          node,
+          return_sequences=return_sequences,
+          dropout=0.4
+        )
+      )
 
     last_activation = "sigmoid" if self.num_classes == 1 else "softmax"
     model.add(Dense(
@@ -37,7 +45,15 @@ class RNNModel:
     ))
 
     optimizer = Adam(lr=0.0002)
-    model.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
+    model.compile(
+      loss="binary_crossentropy",
+      optimizer=optimizer,
+      metrics=[
+        "accuracy",
+        AUC(),
+        AUC(curve="PR")
+      ]
+    )
     model.summary()
 
     self.model = model

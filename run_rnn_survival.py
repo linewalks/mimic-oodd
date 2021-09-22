@@ -82,7 +82,8 @@ class RNNRunner(RunnerBase):
     )
     model.train(
       train_data["x"],
-      train_data["y"][:, 0]
+      train_data["y"][:, 0],
+      epochs=15
     )
 
     pred_y = model.predict(
